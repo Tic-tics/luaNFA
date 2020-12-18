@@ -1,0 +1,15 @@
+state a
+state b
+state c
+state d
+state e
+
+start a
+
+final e
+
+transition a b <1>
+transition b c <1>
+
+epsilon c d
+epsilon d e
