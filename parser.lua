@@ -99,47 +99,47 @@ local function tableSize(t)
   return i
 end
 
-local function tableRunner(nfaStates)
-  local states = nfaStates
+local function tableRunner(nfaTable)
+  local table = nfaTable
   return coroutine.create( function ()
       -- Start in the start states
-      local currentStates = {}
-      for k,v in pairs(states) do
+      table.currentStates = {}
+      for k,v in pairs(table.states) do
         print("putting state ", k, v, v.start)
-        if v.start then currentStates[k] = true end
+        if v.start then table.currentStates[k] = true end
       end
       
       -- Lazy inefficent epsilon transform
-        -- Applies epsilon "character" n times, where n is the number of states
-        for i = 0,tableSize(states) do
-          for k,v in pairs(states) do
-            if currentStates[k] then
-              if v.delta[""] then
-                for _,state in pairs(v.delta[""]) do
-                  print(state, " is a next state via epsilon")
-                  nextStates[state] = true
-                end
+      -- Applies epsilon "character" n times, where n is the number of states
+      for i = 0,tableSize(table.states) do
+        for k,v in pairs(table.states) do
+          if table.currentStates[k] then
+            if v.delta[""] then
+              for _,state in pairs(v.delta[""]) do
+                print(state, " is a next state via epsilon")
+                table.currentStates[state] = true
               end
             end
           end
         end
-      
+      end
+    
       while true do
-        local inFinal = nil
-        for k,_ in pairs(currentStates) do
+        table.inFinal = nil
+        for k,_ in pairs(table.currentStates) do
           print("checking state ", k)
-          inFinal = inFinal or states[k].final
+          table.inFinal = table.inFinal or table.states[k].final
         end
-        local nextToken = coroutine.yield(currentStates, inFinal)
+        local nextToken = coroutine.yield()
         assert(type(nextToken) == "string", "Tokens must be strings")
         
-        if nextToken == "" then return inFinal end
+        if nextToken == "" then return end
         
         local nextStates = {}
         
         -- Apply the transition for the next token
-        for k,v in pairs(states) do
-          if currentStates[k] then
+        for k,v in pairs(table.states) do
+          if table.currentStates[k] then
             if v.delta and v.delta[nextToken] then
               for _,state in pairs(v.delta[nextToken]) do
                 print(state, " is a next state")
@@ -151,8 +151,8 @@ local function tableRunner(nfaStates)
         
         -- Lazy inefficent epsilon transform
         -- Applies epsilon "character" n times, where n is the number of states
-        for i = 0,tableSize(states) do
-          for k,v in pairs(states) do
+        for i = 0,tableSize(table.states) do
+          for k,v in pairs(table.states) do
             if nextStates[k] then
               if v.delta and v.delta[""] then
                 for _,state in pairs(v.delta[""]) do
@@ -164,8 +164,8 @@ local function tableRunner(nfaStates)
           end
         end
         
-        currentStates = nextStates
-        listEntries(currentStates)
+        table.currentStates = nextStates
+        listEntries(table.currentStates)
       end
     end)
 end
@@ -174,21 +174,20 @@ function buildNFA(nfaFile)
   local nfaTable = lpeg.match(nfa, nfaFile)
   
   nfaTable.initialize = function ()
-    nfaTable.runner = tableRunner(nfaTable.states)
-    local success = nil
-    success, nfaTable.currentStates, nfaTable.inFinal = coroutine.resume(nfaTable.runner)
+    nfaTable.runner = tableRunner(nfaTable)
+    assert(coroutine.resume(nfaTable.runner), "Failed to initialize the machine")
     return nfaTable.currentStates, nfaTable.inFinal
   end
   
   nfaTable.step = function (token)
     local success = nil
-    success, nfaTable.currentStates, nfaTable.inFinal = coroutine.resume(nfaTable.runner, token)
+    assert(coroutine.resume(nfaTable.runner, token), "Failed to step the machine")
     return nfaTable.currentStates, nfaTable.inFinal
   end
   
   nfaTable.finalize = function ()
     local success = nil
-    success, nfaTable.inFinal = coroutine.resume(nfaTable.runner, "")
+    assert(coroutine.resume(nfaTable.runner, ""), "Failed to finalize the machine")
     return nfaTable.inFinal
   end
   
@@ -201,3 +200,14 @@ function buildNFAFromFile(nfaFileName)
   f:close()
   return buildNFA(s)
 end
+
+function test()
+  return buildNFAFromFile("example.nfa")
+end
+
+function listEntries(table)
+  for k,v in pairs(table) do
+    print(k,v)
+  end
+end
+
